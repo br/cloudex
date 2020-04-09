@@ -33,6 +33,7 @@ defmodule CloudexTest do
                 bytes: 299_396,
                 created_at: "2018-08-27T03:15:42Z",
                 duration: 88.0,
+                eager: %{},
                 etag: "aaf7d25e2f37927b2be50e20c58304e3",
                 format: "mp4",
                 frame_rate: 25.0,
