@@ -8,6 +8,8 @@ defmodule Cloudex.CloudinaryApi do
     {"Content-Type", "application/x-www-form-urlencoded"},
     {"Accept", "application/json"}
   ]
+  @default_recv_timeout 2000
+
 
   @json_library Application.get_env(:cloudex, :json_library, Jason)
 
@@ -19,21 +21,21 @@ defmodule Cloudex.CloudinaryApi do
   returns {:ok, %UploadedFile{}} containing all the information from cloudinary
   or {:error, "reason"}
   """
-  @spec upload(String.t() | {:ok, String.t()}, map) ::
+  @spec upload(String.t() | {:ok, String.t()}, map, integer()) ::
           {:ok, Cloudex.UploadedImage.t()} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
-  def upload(item, opts \\ %{})
-  def upload({:ok, item}, opts) when is_binary(item), do: upload(item, opts)
+  def upload(item, opts \\ %{}, recv_timeout \\ @default_recv_timeout)
+  def upload({:ok, item}, opts, recv_timeout) when is_binary(item), do: upload(item, opts, recv_timeout)
 
-  def upload(item, opts) when is_binary(item) do
+  def upload(item, opts, recv_timeout) when is_binary(item) do
     case item do
-      "http://" <> _rest -> upload_url(item, opts)
-      "https://" <> _rest -> upload_url(item, opts)
-      "s3://" <> _rest -> upload_url(item, opts)
-      _ -> upload_file(item, opts)
+      "http://" <> _rest -> upload_url(item, opts, recv_timeout)
+      "https://" <> _rest -> upload_url(item, opts, recv_timeout)
+      "s3://" <> _rest -> upload_url(item, opts, recv_timeout)
+      _ -> upload_file(item, opts, recv_timeout)
     end
   end
 
-  def upload(invalid_item, _opts) do
+  def upload(invalid_item, _opts, _recv_timeout) do
     {
       :error,
       "Upload/1 only accepts a String.t or {:ok, String.t}, received: #{inspect(invalid_item)}"
@@ -43,34 +45,34 @@ defmodule Cloudex.CloudinaryApi do
   @doc """
   Deletes an image given a public id
   """
-  @spec delete(String.t(), map) :: {:ok, %Cloudex.DeletedImage{}} | {:error, any}
-  def delete(item, opts \\ %{})
+  @spec delete(String.t(), map, integer()) :: {:ok, %Cloudex.DeletedImage{}} | {:error, any}
+  def delete(item, opts \\ %{}, recv_timeout \\ @default_recv_timeout)
 
-  def delete(item, opts) when is_bitstring(item) do
-    case delete_file(item, opts) do
+  def delete(item, opts, recv_timeout) when is_bitstring(item) do
+    case delete_file(item, opts, recv_timeout) do
       {:ok, response} -> {:ok, %Cloudex.DeletedImage{public_id: item, response: response}}
       error -> error
     end
   end
 
-  def delete(invalid_item, _opts) do
+  def delete(invalid_item, _opts, _recv_timeout) do
     {:error, "delete/1 only accepts valid public id, received: #{inspect(invalid_item)}"}
   end
 
   @doc """
   Deletes images given their prefix
   """
-  @spec delete_prefix(String.t(), map) :: {:ok, String.t()} | {:error, any}
-  def delete_prefix(prefix, opts \\ %{})
+  @spec delete_prefix(String.t(), map, integer()) :: {:ok, String.t()} | {:error, any}
+  def delete_prefix(prefix, opts \\ %{}, recv_timeout \\ 2000)
 
-  def delete_prefix(prefix, opts) when is_bitstring(prefix) do
-    case delete_by_prefix(prefix, opts) do
+  def delete_prefix(prefix, opts, recv_timeout) when is_bitstring(prefix) do
+    case delete_by_prefix(prefix, opts, recv_timeout) do
       {:ok, _} -> {:ok, prefix}
       error -> error
     end
   end
 
-  def delete_prefix(invalid_prefix, _opts) do
+  def delete_prefix(invalid_prefix, _opt, _recv_timeout) do
     {:error, "delete_prefix/1 only accepts a valid prefix, received: #{inspect(invalid_prefix)}"}
   end
 
@@ -89,9 +91,9 @@ defmodule Cloudex.CloudinaryApi do
     end
   end
 
-  @spec upload_file(String.t(), map) ::
+  @spec upload_file(String.t(), map, integer()) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
-  defp upload_file(file_path, opts) do
+  defp upload_file(file_path, opts, recv_timeout) do
     options =
       opts
       |> extract_cloudinary_opts
@@ -102,7 +104,7 @@ defmodule Cloudex.CloudinaryApi do
 
     body = {:multipart, [{:file, file_path} | options]}
 
-    post(body, file_path, opts)
+    post(body, file_path, opts, recv_timeout)
   end
 
   @spec extract_cloudinary_opts(map) :: map
@@ -110,30 +112,31 @@ defmodule Cloudex.CloudinaryApi do
     Map.delete(opts, :resource_type)
   end
 
-  @spec upload_url(String.t(), map) ::
+  @spec upload_url(String.t(), map, integer()) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
-  defp upload_url(url, opts) do
+  defp upload_url(url, opts, recv_timeout) do
     opts
     |> Map.merge(%{file: url})
     |> prepare_opts
     |> sign
     |> URI.encode_query()
-    |> post(url, opts)
+    |> post(url, opts, recv_timeout)
   end
 
-  defp credentials do
+  defp credentials(recv_timeout) do
     [
+      recv_timeout: recv_timeout,
       hackney: [
         basic_auth: {Cloudex.Settings.get(:api_key), Cloudex.Settings.get(:secret)}
       ]
     ]
   end
 
-  @spec delete_file(bitstring, map) ::
+  @spec delete_file(bitstring, map, integer()) ::
           {:ok, HTTPoison.Response.t() | HTTPoison.AsyncResponse.t()}
           | {:error, HTTPoison.Error.t()}
-  defp delete_file(item, opts) do
-    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials())
+  defp delete_file(item, opts, recv_timeout) do
+    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials(recv_timeout))
   end
 
   defp delete_url_for(opts, item) do
@@ -142,11 +145,11 @@ defmodule Cloudex.CloudinaryApi do
     }/#{Map.get(opts, :type, "upload")}?public_ids[]=#{item}"
   end
 
-  @spec delete_file(bitstring, map) ::
+  @spec delete_file(bitstring, map, integer()) ::
           {:ok, HTTPoison.Response.t() | HTTPoison.AsyncResponse.t()}
           | {:error, HTTPoison.Error.t()}
-  defp delete_by_prefix(prefix, opts) do
-    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials())
+  defp delete_by_prefix(prefix, opts, recv_timeout) do
+    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials(recv_timeout))
   end
 
   defp delete_prefix_url_for(%{resource_type: resource_type}, prefix) do
@@ -161,16 +164,16 @@ defmodule Cloudex.CloudinaryApi do
     }"
   end
 
-  @spec post(tuple | String.t(), binary, map) ::
+  @spec post(tuple | String.t(), binary, map, integer()) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
-  defp post(body, source, opts) do
-    with {:ok, raw_response} <- common_post(body, opts),
+  defp post(body, source, opts, recv_timeout) do
+    with {:ok, raw_response} <- common_post(body, opts, recv_timeout),
          {:ok, response} <- @json_library.decode(raw_response.body),
          do: handle_response(response, source)
   end
 
-  defp common_post(body, opts) do
-    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials())
+  defp common_post(body, opts, recv_timeout) do
+    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials(recv_timeout))
   end
 
   defp context_to_list(context) do
