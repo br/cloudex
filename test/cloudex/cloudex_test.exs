@@ -24,13 +24,13 @@ defmodule CloudexTest do
 
   test "upload single image file with specific recv_timeout" do
     use_cassette "test_upload" do
-      assert {:ok, %Cloudex.UploadedImage{}} = Cloudex.upload("test/assets/test.jpg", %{}, 3000)
+      assert {:ok, %Cloudex.UploadedImage{}} = Cloudex.upload("test/assets/test.jpg", %{httpoison: [recv_timeout: 60000, max_redirect: 3]})
     end
   end
 
   test "upload single video file" do
     use_cassette "test_upload_video" do
-      result = Cloudex.upload("test/assets/teamwork.mp4", %{resource_type: "video"}, 3000)
+      result = Cloudex.upload("test/assets/teamwork.mp4", %{resource_type: "video"})
 
       assert {:ok,
               %Cloudex.UploadedVideo{
@@ -75,7 +75,7 @@ defmodule CloudexTest do
                {:ok, %Cloudex.UploadedImage{}},
                {:ok, %Cloudex.UploadedImage{}},
                {:ok, %Cloudex.UploadedImage{}}
-             ] = Cloudex.upload("test/assets/multiple", %{}, 3000)
+             ] = Cloudex.upload("test/assets/multiple")
     end
   end
 
@@ -83,12 +83,12 @@ defmodule CloudexTest do
     use_cassette "test_upload_url with both http and https" do
       assert {:ok, %Cloudex.UploadedImage{}} =
                Cloudex.upload(
-                 "http://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg", %{}, 3000
+                 "http://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg"
                )
 
       assert {:ok, %Cloudex.UploadedImage{}} =
                Cloudex.upload(
-                 "https://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg", %{}, 3000
+                 "https://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg"
                )
     end
   end
@@ -96,7 +96,7 @@ defmodule CloudexTest do
   test "upload s3 image url" do
     use_cassette "test_upload_url with s3" do
       assert {:ok, %Cloudex.UploadedImage{}} =
-               Cloudex.upload("s3://my-bucket/folder/test_image.jpg", %{}, 3000)
+               Cloudex.upload("s3://my-bucket/folder/test_image.jpg")
     end
   end
 
@@ -111,7 +111,7 @@ defmodule CloudexTest do
                  "./test/assets/test.jpg",
                  "nonexistent.png",
                  "https://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg"
-               ], %{}, 3000)
+               ])
     end
   end
 
@@ -120,17 +120,17 @@ defmodule CloudexTest do
       tags = ["foo", "bar"]
 
       {:ok, %Cloudex.UploadedImage{tags: ^tags}} =
-        Cloudex.upload(["./test/assets/test.jpg"], %{tags: Enum.join(tags, ",")}, 3000)
+        Cloudex.upload(["./test/assets/test.jpg"], %{tags: Enum.join(tags, ",")})
 
       # or simply
       {:ok, %Cloudex.UploadedImage{tags: ^tags}} =
-        Cloudex.upload(["./test/assets/test.jpg"], %{tags: tags}, 3000)
+        Cloudex.upload(["./test/assets/test.jpg"], %{tags: tags})
     end
   end
 
   test "upload with phash" do
     use_cassette "test_upload_with_phash" do
-      {:ok, uploaded_image} = Cloudex.upload(["./test/assets/test.jpg"], %{phash: "true"}, 3000)
+      {:ok, uploaded_image} = Cloudex.upload(["./test/assets/test.jpg"], %{phash: "true"})
       assert uploaded_image.phash != nil
     end
   end
@@ -138,7 +138,7 @@ defmodule CloudexTest do
   test "upload with context" do
     use_cassette "test_upload_with_context" do
       {:ok, uploaded_image} =
-        Cloudex.upload(["./test/assets/test.jpg"], %{context: %{foo: "bar"}}, 3000)
+        Cloudex.upload(["./test/assets/test.jpg"], %{context: %{foo: "bar"}})
 
       assert uploaded_image.context != nil
     end

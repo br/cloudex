@@ -9,7 +9,6 @@ defmodule Cloudex do
 
       start %{api_key: "key", secret: "s3cr3t", cloud_name: "heaven"}
   """
-  @default_recv_timeout 2000
   @spec start(settings :: map) :: {:ok, pid}
   defdelegate start(settings), to: Cloudex.Settings
 
@@ -22,15 +21,15 @@ defmodule Cloudex do
     Uploads a (list of) image file(s) and/or url(s) to cloudinary
   """
   @spec upload(list | String.t()) :: upload_result
-  @spec upload(list | [String.t()], map, integer()) :: upload_result
-  def upload(list, options \\ %{}, recv_timeout \\ @default_recv_timeout) do
+  @spec upload(list | [String.t()], map) :: upload_result
+  def upload(list, options \\ %{}) do
     sanitized_list = sanitize_list(list)
     invalid_list = Enum.filter(sanitized_list, &match?({:error, _}, &1))
     valid_list = Enum.filter(sanitized_list, &match?({:ok, _}, &1))
 
     upload_results =
       valid_list
-      |> Enum.map(&Task.async(Cloudex.CloudinaryApi, :upload, [&1, options, recv_timeout]))
+      |> Enum.map(&Task.async(Cloudex.CloudinaryApi, :upload, [&1, options]))
       |> Enum.map(&Task.await(&1, 60_000))
 
     result = upload_results ++ invalid_list
@@ -50,9 +49,9 @@ defmodule Cloudex do
   @doc """
   Delete an image
   """
-  def delete(item, opts \\ %{}, recv_timeout \\ 2000) do
+  def delete(item, opts \\ %{}) do
     Cloudex.CloudinaryApi
-    |> Task.async(:delete, [item, opts, recv_timeout])
+    |> Task.async(:delete, [item, opts])
     |> Task.await(60_000)
   end
 
