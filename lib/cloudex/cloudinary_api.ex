@@ -92,20 +92,17 @@ defmodule Cloudex.CloudinaryApi do
   @spec upload_file(String.t(), map) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
   defp upload_file(file_path, opts) do
-    poison_opts = get_httpoison(opts)
-
     options =
       opts
+      |> Map.delete(:request_options)
       |> extract_cloudinary_opts
-      |> extract_poison_opts
       |> prepare_opts
       |> sign
       |> unify
       |> Map.to_list()
 
     body = {:multipart, [{:file, file_path} | options]}
-
-    post(body, file_path, opts, poison_opts)
+    post(body, file_path, opts)
   end
 
   @spec extract_cloudinary_opts(map) :: map
@@ -113,32 +110,16 @@ defmodule Cloudex.CloudinaryApi do
     Map.delete(opts, :resource_type)
   end
 
-  @spec get_httpoison(map) :: map
-  defp get_httpoison(opts) do
-    if Map.has_key?(opts, :httpoison) do
-      Map.get(opts, :httpoison)
-    else
-      []
-    end
-  end
-
-  @spec extract_poison_opts(map) :: map
-  defp extract_poison_opts(opts) do
-    Map.delete(opts, :httpoison)
-  end
-
   @spec upload_url(String.t(), map) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
   defp upload_url(url, opts) do
-    poison_opts = get_httpoison(opts)
-
     opts
-    |> extract_poison_opts
+    |> Map.delete(:request_options)
     |> Map.merge(%{file: url})
     |> prepare_opts
     |> sign
     |> URI.encode_query()
-    |> post(url, opts, poison_opts)
+    |> post(url, opts)
   end
 
   defp credentials do
@@ -153,7 +134,8 @@ defmodule Cloudex.CloudinaryApi do
           {:ok, HTTPoison.Response.t() | HTTPoison.AsyncResponse.t()}
           | {:error, HTTPoison.Error.t()}
   defp delete_file(item, opts) do
-    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials())
+    {request_opts, opts} = Map.pop(opts, :request_options, [])
+    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials() ++ request_opts)
   end
 
   defp delete_url_for(opts, item) do
@@ -166,7 +148,8 @@ defmodule Cloudex.CloudinaryApi do
           {:ok, HTTPoison.Response.t() | HTTPoison.AsyncResponse.t()}
           | {:error, HTTPoison.Error.t()}
   defp delete_by_prefix(prefix, opts) do
-    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials())
+    {request_opts, opts} = Map.pop(opts, :request_options, [])
+    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials() ++ request_opts)
   end
 
   defp delete_prefix_url_for(%{resource_type: resource_type}, prefix) do
@@ -181,16 +164,17 @@ defmodule Cloudex.CloudinaryApi do
     }"
   end
 
-  @spec post(tuple | String.t(), binary, map, keyword) ::
+  @spec post(tuple | String.t(), binary, map) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
-  defp post(body, source, opts, poison_opts) do
-    with {:ok, raw_response} <- common_post(body, opts, poison_opts),
+  defp post(body, source, opts) do
+    with {:ok, raw_response} <- common_post(body, opts),
          {:ok, response} <- @json_library.decode(raw_response.body),
          do: handle_response(response, source)
   end
 
-  defp common_post(body, opts, poison_opts) do
-    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials() ++ poison_opts)
+  defp common_post(body, opts) do
+    {request_opts, opts} = Map.pop(opts, :request_options, [])
+    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials() ++ request_opts)
   end
 
   defp context_to_list(context) do
