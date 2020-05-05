@@ -30,7 +30,7 @@ defmodule Cloudex do
     upload_results =
       valid_list
       |> Enum.map(&Task.async(Cloudex.CloudinaryApi, :upload, [&1, options]))
-      |> Enum.map(&Task.await(&1, 60_000))
+      |> Enum.map(&Task.await(&1, get_recv_timeout(options)))
 
     result = upload_results ++ invalid_list
 
@@ -52,7 +52,7 @@ defmodule Cloudex do
   def delete(item, opts \\ %{}) do
     Cloudex.CloudinaryApi
     |> Task.async(:delete, [item, opts])
-    |> Task.await(60_000)
+    |> Task.await(get_recv_timeout(opts))
   end
 
   @doc """
@@ -62,6 +62,18 @@ defmodule Cloudex do
     Cloudex.CloudinaryApi
     |> Task.async(:delete_prefix, [prefix])
     |> Task.await(60_000)
+  end
+
+  defp get_recv_timeout(options) do
+    {request_opts, _} = Map.pop(options, :request_options, [])
+    recv_timeout = request_opts[:recv_timeout]
+
+    case recv_timeout do
+      nil ->
+        60_000
+      _ ->
+        recv_timeout + 5_000
+    end
   end
 
   @spec sanitize_list(list | String.t(), list) :: [{:ok, String.t()} | {:error, String.t()}]

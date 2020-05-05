@@ -94,6 +94,7 @@ defmodule Cloudex.CloudinaryApi do
   defp upload_file(file_path, opts) do
     options =
       opts
+      |> Map.delete(:request_options)
       |> extract_cloudinary_opts
       |> prepare_opts
       |> sign
@@ -101,7 +102,6 @@ defmodule Cloudex.CloudinaryApi do
       |> Map.to_list()
 
     body = {:multipart, [{:file, file_path} | options]}
-
     post(body, file_path, opts)
   end
 
@@ -114,6 +114,7 @@ defmodule Cloudex.CloudinaryApi do
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
   defp upload_url(url, opts) do
     opts
+    |> Map.delete(:request_options)
     |> Map.merge(%{file: url})
     |> prepare_opts
     |> sign
@@ -133,7 +134,8 @@ defmodule Cloudex.CloudinaryApi do
           {:ok, HTTPoison.Response.t() | HTTPoison.AsyncResponse.t()}
           | {:error, HTTPoison.Error.t()}
   defp delete_file(item, opts) do
-    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials())
+    {request_opts, opts} = Map.pop(opts, :request_options, [])
+    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials() ++ request_opts)
   end
 
   defp delete_url_for(opts, item) do
@@ -146,7 +148,8 @@ defmodule Cloudex.CloudinaryApi do
           {:ok, HTTPoison.Response.t() | HTTPoison.AsyncResponse.t()}
           | {:error, HTTPoison.Error.t()}
   defp delete_by_prefix(prefix, opts) do
-    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials())
+    {request_opts, opts} = Map.pop(opts, :request_options, [])
+    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials() ++ request_opts)
   end
 
   defp delete_prefix_url_for(%{resource_type: resource_type}, prefix) do
@@ -170,7 +173,8 @@ defmodule Cloudex.CloudinaryApi do
   end
 
   defp common_post(body, opts) do
-    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials())
+    {request_opts, opts} = Map.pop(opts, :request_options, [])
+    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials() ++ request_opts)
   end
 
   defp context_to_list(context) do
