@@ -40,6 +40,104 @@ defmodule Cloudex.CloudinaryApi do
     }
   end
 
+  def upload_chunked(item, bytes_in_chunk \\ 5_000_000, opts \\ %{}) do
+    unique_id = Base.encode16(item)
+    %{size: size} = File.stat!(item)
+
+      File.stream!(item, [], bytes_in_chunk)
+      |> Stream.with_index()
+      |> Enum.each(fn chunk_with_index ->
+        upload_chunk(chunk_with_index, item, size, bytes_in_chunk, unique_id, opts)
+      end)
+  end
+
+  defp upload_chunk(
+         {chunk, index} = _chunk_with_index,
+         file_path,
+         size,
+         bytes_in_chunk,
+         unique_id,
+         opts
+       ) do
+    start_byte = index * bytes_in_chunk
+
+    end_byte =
+      if div(size, bytes_in_chunk) == index, do: size, else: start_byte + bytes_in_chunk - 1
+
+    content_range = "bytes #{start_byte}-#{end_byte}/#{size}"
+
+    chunk_headers = [
+      {"X-Unique-Upload-Id", unique_id},
+      {"Content-Range", content_range},
+      {"Content-Type", "multipart/form-data"},
+      {"Transfer-Encoding", "chunked"}
+    ]
+
+    # IO.inspect(index, label: "INDEX")
+
+    # IO.inspect(content_range, label: "CONTENT_RANGE")
+
+    options =
+      opts
+      |> Map.delete(:request_options)
+      |> extract_cloudinary_opts
+      |> prepare_opts
+      |> sign
+      |> unify
+      |> Map.to_list()
+
+    # options =
+    #  [
+    #     {"upload_preset", "qpqfzulu"},
+    #     {"cloud_name", "bleacherreport"},
+    #     {"public_id", "test_chunked"},
+    #     {"resource_type", "video"}
+    #  ]
+
+    # IO.inspect(chunk, label: "CHUNK IN upload_chunk")
+    # IO.inspect(options, label: "OPTIONS in upload_chunk")
+    # body = {:multipart, [{:file, chunk} | options]}
+    # form = {:multipart, [
+    #   {"file", chunk}, {"filename", file_path <> "#{index}"} | options
+    # ]}
+    options = Enum.map(options, fn {name, value} -> 
+        {name, value, {"form-data", [{"name", name}]}, []}  
+    end)
+
+    form = {:multipart, [
+    {"file", chunk, {"form-data", [
+      {"name", "file"},
+      {"filename", "blob"}
+    ]}, [{"content-type", "application/octet-stream"}]} | options]}
+
+
+    # IO.inspect(form, label: "FORM")
+    # resp = HTTPoison.request(
+    #   :post,
+    #   url_for(opts),
+    #   body,
+    #   @cloudinary_headers ++ chunk_headers,
+    #   credentials()
+    # )
+    url = "#{@base_url}#{Cloudex.Settings.get(:cloud_name)}/video/upload"
+    # url = "http://localhost:4011/upload_test"
+    # url = "http://localhost:3000/upload_test"
+    # IO.inspect(byte_size(form), label: "FORM SIZE")
+    resp =
+      HTTPoison.post(
+        url,
+        form,
+        chunk_headers,
+        credentials() ++ [{:timeout, 60000}, {:recv_timeout, 30000}]
+      )
+
+    # IO.inspect(byte_size(chunk), label: "CHUNK SIZE")
+    # IO.inspect(File.stat(chunk.path), label: "CHUNK PATH FILE SIZE")
+    # IO.inspect(resp, label: "RESP")
+
+    resp
+  end
+
   @doc """
   Deletes an image given a public id
   """
@@ -135,7 +233,12 @@ defmodule Cloudex.CloudinaryApi do
           | {:error, HTTPoison.Error.t()}
   defp delete_file(item, opts) do
     {request_opts, opts} = Map.pop(opts, :request_options, [])
-    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials() ++ request_opts)
+
+    HTTPoison.delete(
+      delete_url_for(opts, item),
+      @cloudinary_headers,
+      credentials() ++ request_opts
+    )
   end
 
   defp delete_url_for(opts, item) do
@@ -149,7 +252,12 @@ defmodule Cloudex.CloudinaryApi do
           | {:error, HTTPoison.Error.t()}
   defp delete_by_prefix(prefix, opts) do
     {request_opts, opts} = Map.pop(opts, :request_options, [])
-    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials() ++ request_opts)
+
+    HTTPoison.delete(
+      delete_prefix_url_for(opts, prefix),
+      @cloudinary_headers,
+      credentials() ++ request_opts
+    )
   end
 
   defp delete_prefix_url_for(%{resource_type: resource_type}, prefix) do
@@ -174,7 +282,14 @@ defmodule Cloudex.CloudinaryApi do
 
   defp common_post(body, opts) do
     {request_opts, opts} = Map.pop(opts, :request_options, [])
-    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials() ++ request_opts)
+
+    HTTPoison.request(
+      :post,
+      url_for(opts),
+      body,
+      @cloudinary_headers,
+      credentials() ++ request_opts
+    )
   end
 
   defp context_to_list(context) do
