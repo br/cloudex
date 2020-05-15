@@ -44,6 +44,7 @@ defmodule Cloudex.Settings do
   def do_start({:ok, settings}) do
     case GenServer.start(__MODULE__, settings, name: :cloudex) do
       {:ok, pid} ->
+        Cloudex.Metrics.setup()
         {:ok, pid}
 
       {:error, {:already_started, _pid}} ->

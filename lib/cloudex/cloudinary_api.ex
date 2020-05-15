@@ -40,29 +40,59 @@ defmodule Cloudex.CloudinaryApi do
     }
   end
 
-  def upload_chunked(item, bytes_in_chunk \\ 5_000_000, opts \\ %{}) do
-    unique_id = Base.encode16(item)
+  def upload_large(item, chunk_size \\ 5_000_001, opts \\ %{}) do
+    unique_id = Base.encode64(item)
     %{size: size} = File.stat!(item)
 
-      File.stream!(item, [], bytes_in_chunk)
-      |> Stream.with_index()
-      |> Enum.each(fn chunk_with_index ->
-        upload_chunk(chunk_with_index, item, size, bytes_in_chunk, unique_id, opts)
-      end)
+    start_time = System.monotonic_time(:millisecond)
+
+    case upload_chunks(item, chunk_size, size, unique_id, opts) do
+      {:ok, raw_response} ->
+        send_telemetry_event(start_time, :upload_large, size, raw_response)
+        response = @json_library.decode!(raw_response.body)
+        handle_response(response, item)
+      {:error, raw_response} ->
+        send_telemetry_event(start_time, :upload_large, size, raw_response)
+        error_response = @json_library.decode!(raw_response.body)
+        handle_response(%{"error" => %{"message" => error_response}}, item)
+      _ ->
+        send_telemetry_event(start_time, :upload_large, size)
+        handle_response(%{"error" => %{"message" => "Error uploading file"}}, item)
+    end
+  end
+
+  defp upload_chunks(item, chunk_size, size, unique_id, opts) do
+    File.stream!(item, [], chunk_size)
+    |> Stream.with_index()
+    |> Enum.reduce_while({:ok, %{}}, fn chunk_with_index, _acc ->
+      start_time = System.monotonic_time(:millisecond)
+      chunk_resp = upload_chunk(chunk_with_index, item, size, chunk_size, unique_id, opts)
+      case chunk_resp do
+        {:ok, %HTTPoison.Response{status_code: 200} = resp} ->
+          send_telemetry_event(start_time, :upload_chunk, chunk_size, resp)
+          {:cont, {:ok, resp}}
+        {:ok, resp} ->
+          send_telemetry_event(start_time, :upload_chunk, chunk_size, resp)
+          {:halt, {:error, resp}}
+        {:error, error} ->
+          send_telemetry_event(start_time, :upload_chunk, chunk_size)
+          {:halt, error}
+      end
+    end)
   end
 
   defp upload_chunk(
          {chunk, index} = _chunk_with_index,
-         file_path,
+         _file_path,
          size,
-         bytes_in_chunk,
+         chunk_size,
          unique_id,
          opts
        ) do
-    start_byte = index * bytes_in_chunk
+    start_byte = index * chunk_size
 
     end_byte =
-      if div(size, bytes_in_chunk) == index, do: size, else: start_byte + bytes_in_chunk - 1
+      if div(size, chunk_size) == index, do: size - 1, else: start_byte + chunk_size - 1
 
     content_range = "bytes #{start_byte}-#{end_byte}/#{size}"
 
@@ -70,72 +100,43 @@ defmodule Cloudex.CloudinaryApi do
       {"X-Unique-Upload-Id", unique_id},
       {"Content-Range", content_range},
       {"Content-Type", "multipart/form-data"},
-      {"Transfer-Encoding", "chunked"}
     ]
 
-    # IO.inspect(index, label: "INDEX")
+    options = prepare_signed_opts(opts)
 
-    # IO.inspect(content_range, label: "CONTENT_RANGE")
+    form = {:multipart,
+         [
+           {"file", chunk, {"form-data", [{"name", "file"}, {"filename", "blob"}]},
+            [{"content-type", "application/octet-stream"}]},
+           {"api_key", Cloudex.Settings.get(:api_key)} | options
+        ]}
 
-    options =
-      opts
-      |> Map.delete(:request_options)
-      |> extract_cloudinary_opts
-      |> prepare_opts
-      |> sign
-      |> unify
-      |> Map.to_list()
-
-    # options =
-    #  [
-    #     {"upload_preset", "qpqfzulu"},
-    #     {"cloud_name", "bleacherreport"},
-    #     {"public_id", "test_chunked"},
-    #     {"resource_type", "video"}
-    #  ]
-
-    # IO.inspect(chunk, label: "CHUNK IN upload_chunk")
-    # IO.inspect(options, label: "OPTIONS in upload_chunk")
-    # body = {:multipart, [{:file, chunk} | options]}
-    # form = {:multipart, [
-    #   {"file", chunk}, {"filename", file_path <> "#{index}"} | options
-    # ]}
-    options = Enum.map(options, fn {name, value} -> 
-        {name, value, {"form-data", [{"name", name}]}, []}  
-    end)
-
-    form = {:multipart, [
-    {"file", chunk, {"form-data", [
-      {"name", "file"},
-      {"filename", "blob"}
-    ]}, [{"content-type", "application/octet-stream"}]} | options]}
-
-
-    # IO.inspect(form, label: "FORM")
-    # resp = HTTPoison.request(
-    #   :post,
-    #   url_for(opts),
-    #   body,
-    #   @cloudinary_headers ++ chunk_headers,
-    #   credentials()
-    # )
     url = "#{@base_url}#{Cloudex.Settings.get(:cloud_name)}/video/upload"
-    # url = "http://localhost:4011/upload_test"
-    # url = "http://localhost:3000/upload_test"
-    # IO.inspect(byte_size(form), label: "FORM SIZE")
-    resp =
-      HTTPoison.post(
-        url,
-        form,
-        chunk_headers,
-        credentials() ++ [{:timeout, 60000}, {:recv_timeout, 30000}]
-      )
+    request_options = opts[:request_options] || []
 
-    # IO.inspect(byte_size(chunk), label: "CHUNK SIZE")
-    # IO.inspect(File.stat(chunk.path), label: "CHUNK PATH FILE SIZE")
-    # IO.inspect(resp, label: "RESP")
+    HTTPoison.post(
+      url,
+      form,
+      chunk_headers,
+      credentials() ++ request_options
+    )
+  end
 
-    resp
+  defp send_telemetry_event(start_time, function, size, resp) do
+    end_time = System.monotonic_time(:millisecond)
+    resp_result = if resp.status_code == 200, do: :success , else: :failure 
+    :telemetry.execute([:cloudex, function, resp_result],
+      %{request_time: end_time - start_time},
+      %{status_code: resp.status_code, bytes: size}
+    )
+  end
+
+  defp send_telemetry_event(start_time, function, size) do
+    end_time = System.monotonic_time(:millisecond)
+    :telemetry.execute([:cloudex, function, :failure],
+      %{request_time: end_time - start_time},
+      %{status_code: 503, bytes: size}
+    )
   end
 
   @doc """
@@ -190,14 +191,7 @@ defmodule Cloudex.CloudinaryApi do
   @spec upload_file(String.t(), map) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
   defp upload_file(file_path, opts) do
-    options =
-      opts
-      |> Map.delete(:request_options)
-      |> extract_cloudinary_opts
-      |> prepare_opts
-      |> sign
-      |> unify
-      |> Map.to_list()
+    options = prepare_signed_opts(opts)
 
     body = {:multipart, [{:file, file_path} | options]}
     post(body, file_path, opts)
@@ -307,6 +301,16 @@ defmodule Cloudex.CloudinaryApi do
     do: %{opts | context: context_to_list(context)} |> prepare_opts()
 
   defp prepare_opts(opts), do: opts
+
+  defp prepare_signed_opts(opts) do
+    opts
+    |> Map.delete(:request_options)
+    |> extract_cloudinary_opts
+    |> prepare_opts
+    |> sign
+    |> unify
+    |> Map.to_list()
+  end
 
   defp url_for(%{resource_type: resource_type}), do: url(resource_type)
   defp url_for(_), do: url("image")
