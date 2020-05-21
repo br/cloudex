@@ -3,6 +3,8 @@ defmodule Cloudex.CloudinaryApi do
   The live API implementation for Cloudinary uploading
   """
 
+  alias Cloudex.Telemetry
+
   @base_url "https://api.cloudinary.com/v1_1/"
   @cloudinary_headers [
     {"Content-Type", "application/x-www-form-urlencoded"},
@@ -40,23 +42,21 @@ defmodule Cloudex.CloudinaryApi do
     }
   end
 
-  def upload_large(item, chunk_size \\ 5_000_001, opts \\ %{}) do
+  def upload_large(item, chunk_size \\ 6_000_000, opts \\ %{}) do
     unique_id = Base.encode64(item)
     %{size: size} = File.stat!(item)
-
-    start_time = System.monotonic_time(:millisecond)
-
+    start_time = Telemetry.start(:upload_large)
     case upload_chunks(item, chunk_size, size, unique_id, opts) do
       {:ok, raw_response} ->
-        send_telemetry_event(start_time, :upload_large, size, raw_response)
+        Telemetry.stop(:upload_large, start_time)
         response = @json_library.decode!(raw_response.body)
         handle_response(response, item)
       {:error, raw_response} ->
-        send_telemetry_event(start_time, :upload_large, size, raw_response)
+        Telemetry.stop(:upload_large, start_time)
         error_response = @json_library.decode!(raw_response.body)
         handle_response(%{"error" => %{"message" => error_response}}, item)
       _ ->
-        send_telemetry_event(start_time, :upload_large, size)
+        Telemetry.stop(:upload_large, start_time)
         handle_response(%{"error" => %{"message" => "Error uploading file"}}, item)
     end
   end
@@ -64,37 +64,28 @@ defmodule Cloudex.CloudinaryApi do
   defp upload_chunks(item, chunk_size, size, unique_id, opts) do
     File.stream!(item, [], chunk_size)
     |> Stream.with_index()
-    |> Enum.reduce_while({:ok, %{}}, fn chunk_with_index, _acc ->
-      start_time = System.monotonic_time(:millisecond)
-      chunk_resp = upload_chunk(chunk_with_index, item, size, chunk_size, unique_id, opts)
+    |> Enum.reduce_while({:ok, %{}}, fn {chunk, index} = _chunk_with_index, _acc ->
+      start_time = Telemetry.start(:chunk)
+      content_range = generate_content_range(index, size, chunk_size)
+      chunk_resp = upload_chunk(chunk, content_range, unique_id, opts)
+      Telemetry.stop(:chunk, start_time)
       case chunk_resp do
         {:ok, %HTTPoison.Response{status_code: 200} = resp} ->
-          send_telemetry_event(start_time, :upload_chunk, chunk_size, resp)
           {:cont, {:ok, resp}}
         {:ok, resp} ->
-          send_telemetry_event(start_time, :upload_chunk, chunk_size, resp)
           {:halt, {:error, resp}}
         {:error, error} ->
-          send_telemetry_event(start_time, :upload_chunk, chunk_size)
           {:halt, error}
       end
     end)
   end
 
-  defp upload_chunk(
-         {chunk, index} = _chunk_with_index,
-         _file_path,
-         size,
-         chunk_size,
+  def upload_chunk(
+         chunk,
+         content_range,
          unique_id,
          opts
        ) do
-    start_byte = index * chunk_size
-
-    end_byte =
-      if div(size, chunk_size) == index, do: size - 1, else: start_byte + chunk_size - 1
-
-    content_range = "bytes #{start_byte}-#{end_byte}/#{size}"
 
     chunk_headers = [
       {"X-Unique-Upload-Id", unique_id},
@@ -122,21 +113,13 @@ defmodule Cloudex.CloudinaryApi do
     )
   end
 
-  defp send_telemetry_event(start_time, function, size, resp) do
-    end_time = System.monotonic_time(:millisecond)
-    resp_result = if resp.status_code == 200, do: :success , else: :failure 
-    :telemetry.execute([:cloudex, function, resp_result],
-      %{request_time: end_time - start_time},
-      %{status_code: resp.status_code, bytes: size}
-    )
-  end
+  defp generate_content_range(index, size, chunk_size) do
+    start_byte = index * chunk_size
 
-  defp send_telemetry_event(start_time, function, size) do
-    end_time = System.monotonic_time(:millisecond)
-    :telemetry.execute([:cloudex, function, :failure],
-      %{request_time: end_time - start_time},
-      %{status_code: 503, bytes: size}
-    )
+    end_byte =
+      if div(size, chunk_size) == index, do: size - 1, else: start_byte + chunk_size - 1
+
+    content_range = "bytes #{start_byte}-#{end_byte}/#{size}"
   end
 
   @doc """
