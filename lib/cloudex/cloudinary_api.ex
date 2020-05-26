@@ -46,15 +46,18 @@ defmodule Cloudex.CloudinaryApi do
     unique_id = Base.encode64(item)
     %{size: size} = File.stat!(item)
     start_time = Telemetry.start(:upload_large)
+
     case upload_chunks(item, chunk_size, size, unique_id, opts) do
       {:ok, raw_response} ->
         Telemetry.stop(:upload_large, start_time)
         response = @json_library.decode!(raw_response.body)
         handle_response(response, item)
+
       {:error, raw_response} ->
         Telemetry.stop(:upload_large, start_time)
         error_response = @json_library.decode!(raw_response.body)
         handle_response(%{"error" => %{"message" => error_response}}, item)
+
       _ ->
         Telemetry.stop(:upload_large, start_time)
         handle_response(%{"error" => %{"message" => "Error uploading file"}}, item)
@@ -69,11 +72,14 @@ defmodule Cloudex.CloudinaryApi do
       content_range = generate_content_range(index, size, chunk_size)
       chunk_resp = upload_chunk(chunk, content_range, unique_id, opts)
       Telemetry.stop(:chunk, start_time)
+
       case chunk_resp do
         {:ok, %HTTPoison.Response{status_code: 200} = resp} ->
           {:cont, {:ok, resp}}
+
         {:ok, resp} ->
           {:halt, {:error, resp}}
+
         {:error, error} ->
           {:halt, error}
       end
@@ -81,26 +87,26 @@ defmodule Cloudex.CloudinaryApi do
   end
 
   def upload_chunk(
-         chunk,
-         content_range,
-         unique_id,
-         opts
-       ) do
-
+        chunk,
+        content_range,
+        unique_id,
+        opts
+      ) do
     chunk_headers = [
       {"X-Unique-Upload-Id", unique_id},
       {"Content-Range", content_range},
-      {"Content-Type", "multipart/form-data"},
+      {"Content-Type", "multipart/form-data"}
     ]
 
     options = prepare_signed_opts(opts)
 
-    form = {:multipart,
-         [
-           {"file", chunk, {"form-data", [{"name", "file"}, {"filename", "blob"}]},
-            [{"content-type", "application/octet-stream"}]},
-           {"api_key", Cloudex.Settings.get(:api_key)} | options
-        ]}
+    form =
+      {:multipart,
+       [
+         {"file", chunk, {"form-data", [{"name", "file"}, {"filename", "blob"}]},
+          [{"content-type", "application/octet-stream"}]}
+         | options
+       ]}
 
     url = "#{@base_url}#{Cloudex.Settings.get(:cloud_name)}/video/upload"
     request_options = opts[:request_options] || []
@@ -116,10 +122,9 @@ defmodule Cloudex.CloudinaryApi do
   defp generate_content_range(index, size, chunk_size) do
     start_byte = index * chunk_size
 
-    end_byte =
-      if div(size, chunk_size) == index, do: size - 1, else: start_byte + chunk_size - 1
+    end_byte = if div(size, chunk_size) == index, do: size - 1, else: start_byte + chunk_size - 1
 
-    content_range = "bytes #{start_byte}-#{end_byte}/#{size}"
+    "bytes #{start_byte}-#{end_byte}/#{size}"
   end
 
   @doc """

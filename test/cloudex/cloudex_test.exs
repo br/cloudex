@@ -247,4 +247,76 @@ defmodule CloudexTest do
              width: 250
            } = result
   end
+
+  test "uploads a file in chunks" do
+    use_cassette "test_upload_large", match_requests_on: [:headers] do
+      result =
+        Cloudex.upload_large(["./test/assets/test_chunk.mp4"], 6_000_000, %{
+          resource_type: "video",
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
+
+      assert {
+               :ok,
+               %Cloudex.UploadedVideo{
+                 audio: %{
+                   "bit_rate" => "192050",
+                   "channel_layout" => "stereo",
+                   "channels" => 2,
+                   "codec" => "aac",
+                   "frequency" => 48000
+                 },
+                 bit_rate: 3_717_305,
+                 bytes: 10_544_601,
+                 created_at: "2020-05-26T05:24:29Z",
+                 duration: 22.692667,
+                 eager: %{},
+                 etag: "b4b0bd86de486821d2d7470df805dc84",
+                 format: "mp4",
+                 frame_rate: 23.976023976023978,
+                 height: 1080,
+                 original_filename: "blob",
+                 public_id: "v0awggmxai7blns99rcq",
+                 resource_type: "video",
+                 secure_url:
+                   "https://res.cloudinary.com/my_cloud_name/video/upload/v1590470669/v0awggmxai7blns99rcq.mp4",
+                 signature: "0e2ea0962818e79049d172e7bb7e1ede4fc5b114",
+                 source: "./test/assets/test_chunk.mp4",
+                 tags: '',
+                 type: "upload",
+                 url:
+                   "http://res.cloudinary.com/my_cloud_name/video/upload/v1590470669/v0awggmxai7blns99rcq.mp4",
+                 version: 1_590_470_669,
+                 video: %{
+                   "bit_rate" => "3533379",
+                   "codec" => "h264",
+                   "level" => 42,
+                   "pix_format" => "yuv420p",
+                   "profile" => "High"
+                 },
+                 width: 1920,
+                 context: nil,
+                 moderation: nil,
+                 phash: nil
+               }
+             } = result
+    end
+  end
+
+  test "returns an error if one of the chunks returns an error" do
+    use_cassette "test_upload_large_error", match_requests_on: [:headers] do
+      result =
+        Cloudex.upload_large(["./test/assets/test_chunk.mp4"], 6_000_000, %{
+          resource_type: "video",
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
+
+      assert {:error,
+              %{
+                "error" => %{
+                  "message" => "Chunk size doesn't match upload size: 6000000 - 5786816"
+                }
+              }} = result
+    end
+  end
 end

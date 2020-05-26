@@ -48,9 +48,7 @@ defmodule Cloudex do
 
     result =
       valid_list
-      |> Enum.map(
-        &Task.async(Cloudex.CloudinaryApi, :upload_large, [&1, chunk_size, options])
-      )
+      |> Enum.map(&Task.async(Cloudex.CloudinaryApi, :upload_large, [&1, chunk_size, options]))
       |> Enum.map(&Task.await(&1, get_recv_timeout(options)))
 
     case Enum.count(result) do
