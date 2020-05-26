@@ -18,19 +18,29 @@ defmodule CloudexTest do
 
   test "upload single image file" do
     use_cassette "test_upload" do
-      assert {:ok, %Cloudex.UploadedImage{}} = Cloudex.upload("test/assets/test.jpg", %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+      assert {:ok, %Cloudex.UploadedImage{}} =
+               Cloudex.upload("test/assets/test.jpg", %{
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
   test "upload single image file with specific recv_timeout" do
     use_cassette "test_upload" do
-      assert {:ok, %Cloudex.UploadedImage{}} = Cloudex.upload("test/assets/test.jpg", %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+      assert {:ok, %Cloudex.UploadedImage{}} =
+               Cloudex.upload("test/assets/test.jpg", %{
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
   test "upload single video file" do
     use_cassette "test_upload_video" do
-      result = Cloudex.upload("test/assets/teamwork.mp4", %{resource_type: "video", request_options: [recv_timeout: 60000, max_redirect: 3]})
+      result =
+        Cloudex.upload("test/assets/teamwork.mp4", %{
+          resource_type: "video",
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
 
       assert {:ok,
               %Cloudex.UploadedVideo{
@@ -39,7 +49,7 @@ defmodule CloudexTest do
                 bytes: 299_396,
                 created_at: "2018-08-27T03:15:42Z",
                 duration: 88.0,
-                eager: %{},
+                eager: [],
                 etag: "aaf7d25e2f37927b2be50e20c58304e3",
                 format: "mp4",
                 frame_rate: 25.0,
@@ -75,7 +85,10 @@ defmodule CloudexTest do
                {:ok, %Cloudex.UploadedImage{}},
                {:ok, %Cloudex.UploadedImage{}},
                {:ok, %Cloudex.UploadedImage{}}
-             ] = Cloudex.upload("test/assets/multiple", %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+             ] =
+               Cloudex.upload("test/assets/multiple", %{
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
@@ -98,7 +111,9 @@ defmodule CloudexTest do
   test "upload s3 image url" do
     use_cassette "test_upload_url with s3" do
       assert {:ok, %Cloudex.UploadedImage{}} =
-               Cloudex.upload("s3://my-bucket/folder/test_image.jpg", %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+               Cloudex.upload("s3://my-bucket/folder/test_image.jpg", %{
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
@@ -109,12 +124,14 @@ defmodule CloudexTest do
                {:ok, %Cloudex.UploadedImage{}},
                {:error, "File nonexistent.png does not exist."}
              ] =
-               Cloudex.upload([
-                 "./test/assets/test.jpg",
-                 "nonexistent.png",
-                 "https://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg"
-               ],
-               %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+               Cloudex.upload(
+                 [
+                   "./test/assets/test.jpg",
+                   "nonexistent.png",
+                   "https://cdn.mhpbooks.com/uploads/2014/10/shutterstock_172896005.jpg"
+                 ],
+                 %{request_options: [recv_timeout: 60000, max_redirect: 3]}
+               )
     end
   end
 
@@ -123,17 +140,28 @@ defmodule CloudexTest do
       tags = ["foo", "bar"]
 
       {:ok, %Cloudex.UploadedImage{tags: ^tags}} =
-        Cloudex.upload(["./test/assets/test.jpg"], %{tags: Enum.join(tags, ","), request_options: [recv_timeout: 60000, max_redirect: 3]})
+        Cloudex.upload(["./test/assets/test.jpg"], %{
+          tags: Enum.join(tags, ","),
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
 
       # or simply
       {:ok, %Cloudex.UploadedImage{tags: ^tags}} =
-        Cloudex.upload(["./test/assets/test.jpg"], %{tags: tags, request_options: [recv_timeout: 60000, max_redirect: 3]})
+        Cloudex.upload(["./test/assets/test.jpg"], %{
+          tags: tags,
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
     end
   end
 
   test "upload with phash" do
     use_cassette "test_upload_with_phash" do
-      {:ok, uploaded_image} = Cloudex.upload(["./test/assets/test.jpg"], %{phash: "true", request_options: [recv_timeout: 60000, max_redirect: 3]})
+      {:ok, uploaded_image} =
+        Cloudex.upload(["./test/assets/test.jpg"], %{
+          phash: "true",
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
+
       assert uploaded_image.phash != nil
     end
   end
@@ -141,7 +169,10 @@ defmodule CloudexTest do
   test "upload with context" do
     use_cassette "test_upload_with_context" do
       {:ok, uploaded_image} =
-        Cloudex.upload(["./test/assets/test.jpg"], %{context: %{foo: "bar"}, request_options: [recv_timeout: 60000, max_redirect: 3]})
+        Cloudex.upload(["./test/assets/test.jpg"], %{
+          context: %{foo: "bar"},
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
 
       assert uploaded_image.context != nil
     end
@@ -150,14 +181,18 @@ defmodule CloudexTest do
   test "delete image with public id" do
     use_cassette "test_delete" do
       assert {:ok, %Cloudex.DeletedImage{public_id: "rurwrndtvgzfajljllnr"}} =
-               Cloudex.delete("rurwrndtvgzfajljllnr", %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+               Cloudex.delete("rurwrndtvgzfajljllnr", %{
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
   test "delete image with invalid public id" do
     use_cassette "test_delete_invalid" do
       assert {:ok, %Cloudex.DeletedImage{public_id: "thisIsABogusId"}} =
-               Cloudex.delete("thisIsABogusId", %{request_options: [recv_timeout: 60000, max_redirect: 3]})
+               Cloudex.delete("thisIsABogusId", %{
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
@@ -179,7 +214,11 @@ defmodule CloudexTest do
   test "delete private image" do
     use_cassette "test_private_image" do
       assert {:ok, %Cloudex.DeletedImage{public_id: "eMUnBDShgtAfxcdx"}} =
-               Cloudex.delete("eMUnBDShgtAfxcdx", %{resource_type: "image", type: "private", request_options: [recv_timeout: 60000, max_redirect: 3]})
+               Cloudex.delete("eMUnBDShgtAfxcdx", %{
+                 resource_type: "image",
+                 type: "private",
+                 request_options: [recv_timeout: 60000, max_redirect: 3]
+               })
     end
   end
 
@@ -207,5 +246,77 @@ defmodule CloudexTest do
              version: 1_448_618_543,
              width: 250
            } = result
+  end
+
+  test "uploads a file in chunks" do
+    use_cassette "test_upload_large", match_requests_on: [:headers] do
+      result =
+        Cloudex.upload_large(["./test/assets/test_chunk.mp4"], 6_000_000, %{
+          resource_type: "video",
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
+
+      assert {
+               :ok,
+               %Cloudex.UploadedVideo{
+                 audio: %{
+                   "bit_rate" => "192050",
+                   "channel_layout" => "stereo",
+                   "channels" => 2,
+                   "codec" => "aac",
+                   "frequency" => 48000
+                 },
+                 bit_rate: 3_717_305,
+                 bytes: 10_544_601,
+                 created_at: "2020-05-26T05:24:29Z",
+                 duration: 22.692667,
+                 eager: [],
+                 etag: "b4b0bd86de486821d2d7470df805dc84",
+                 format: "mp4",
+                 frame_rate: 23.976023976023978,
+                 height: 1080,
+                 original_filename: "blob",
+                 public_id: "v0awggmxai7blns99rcq",
+                 resource_type: "video",
+                 secure_url:
+                   "https://res.cloudinary.com/my_cloud_name/video/upload/v1590470669/v0awggmxai7blns99rcq.mp4",
+                 signature: "0e2ea0962818e79049d172e7bb7e1ede4fc5b114",
+                 source: "./test/assets/test_chunk.mp4",
+                 tags: '',
+                 type: "upload",
+                 url:
+                   "http://res.cloudinary.com/my_cloud_name/video/upload/v1590470669/v0awggmxai7blns99rcq.mp4",
+                 version: 1_590_470_669,
+                 video: %{
+                   "bit_rate" => "3533379",
+                   "codec" => "h264",
+                   "level" => 42,
+                   "pix_format" => "yuv420p",
+                   "profile" => "High"
+                 },
+                 width: 1920,
+                 context: nil,
+                 moderation: nil,
+                 phash: nil
+               }
+             } = result
+    end
+  end
+
+  test "returns an error if one of the chunks returns an error" do
+    use_cassette "test_upload_large_error", match_requests_on: [:headers] do
+      result =
+        Cloudex.upload_large(["./test/assets/test_chunk.mp4"], 6_000_000, %{
+          resource_type: "video",
+          request_options: [recv_timeout: 60000, max_redirect: 3]
+        })
+
+      assert {:error,
+              %{
+                "error" => %{
+                  "message" => "Chunk size doesn't match upload size: 6000000 - 5786816"
+                }
+              }} = result
+    end
   end
 end

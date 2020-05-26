@@ -3,6 +3,8 @@ defmodule Cloudex.CloudinaryApi do
   The live API implementation for Cloudinary uploading
   """
 
+  alias Cloudex.Telemetry
+
   @base_url "https://api.cloudinary.com/v1_1/"
   @cloudinary_headers [
     {"Content-Type", "application/x-www-form-urlencoded"},
@@ -38,6 +40,91 @@ defmodule Cloudex.CloudinaryApi do
       :error,
       "Upload/1 only accepts a String.t or {:ok, String.t}, received: #{inspect(invalid_item)}"
     }
+  end
+
+  def upload_large(item, chunk_size \\ 6_000_000, opts \\ %{}) do
+    unique_id = Base.encode64(item)
+    %{size: size} = File.stat!(item)
+    start_time = Telemetry.start(:upload_large)
+
+    case upload_chunks(item, chunk_size, size, unique_id, opts) do
+      {:ok, raw_response} ->
+        Telemetry.stop(:upload_large, start_time)
+        response = @json_library.decode!(raw_response.body)
+        handle_response(response, item)
+
+      {:error, raw_response} ->
+        Telemetry.stop(:upload_large, start_time)
+        error_response = @json_library.decode!(raw_response.body)
+        handle_response(%{"error" => %{"message" => error_response}}, item)
+
+      _ ->
+        Telemetry.stop(:upload_large, start_time)
+        handle_response(%{"error" => %{"message" => "Error uploading file"}}, item)
+    end
+  end
+
+  defp upload_chunks(item, chunk_size, size, unique_id, opts) do
+    File.stream!(item, [], chunk_size)
+    |> Stream.with_index()
+    |> Enum.reduce_while({:ok, %{}}, fn {chunk, index} = _chunk_with_index, _acc ->
+      start_time = Telemetry.start(:chunk)
+      content_range = generate_content_range(index, size, chunk_size)
+      chunk_resp = upload_chunk(chunk, content_range, unique_id, opts)
+      Telemetry.stop(:chunk, start_time)
+
+      case chunk_resp do
+        {:ok, %HTTPoison.Response{status_code: 200} = resp} ->
+          {:cont, {:ok, resp}}
+
+        {:ok, resp} ->
+          {:halt, {:error, resp}}
+
+        {:error, error} ->
+          {:halt, error}
+      end
+    end)
+  end
+
+  def upload_chunk(
+        chunk,
+        content_range,
+        unique_id,
+        opts
+      ) do
+    chunk_headers = [
+      {"X-Unique-Upload-Id", unique_id},
+      {"Content-Range", content_range},
+      {"Content-Type", "multipart/form-data"}
+    ]
+
+    options = prepare_signed_opts(opts)
+
+    form =
+      {:multipart,
+       [
+         {"file", chunk, {"form-data", [{"name", "file"}, {"filename", "blob"}]},
+          [{"content-type", "application/octet-stream"}]}
+         | options
+       ]}
+
+    url = "#{@base_url}#{Cloudex.Settings.get(:cloud_name)}/video/upload"
+    request_options = opts[:request_options] || []
+
+    HTTPoison.post(
+      url,
+      form,
+      chunk_headers,
+      credentials() ++ request_options
+    )
+  end
+
+  defp generate_content_range(index, size, chunk_size) do
+    start_byte = index * chunk_size
+
+    end_byte = if div(size, chunk_size) == index, do: size - 1, else: start_byte + chunk_size - 1
+
+    "bytes #{start_byte}-#{end_byte}/#{size}"
   end
 
   @doc """
@@ -92,14 +179,7 @@ defmodule Cloudex.CloudinaryApi do
   @spec upload_file(String.t(), map) ::
           {:ok, %Cloudex.UploadedImage{}} | {:ok, %Cloudex.UploadedVideo{}} | {:error, any}
   defp upload_file(file_path, opts) do
-    options =
-      opts
-      |> Map.delete(:request_options)
-      |> extract_cloudinary_opts
-      |> prepare_opts
-      |> sign
-      |> unify
-      |> Map.to_list()
+    options = prepare_signed_opts(opts)
 
     body = {:multipart, [{:file, file_path} | options]}
     post(body, file_path, opts)
@@ -135,7 +215,12 @@ defmodule Cloudex.CloudinaryApi do
           | {:error, HTTPoison.Error.t()}
   defp delete_file(item, opts) do
     {request_opts, opts} = Map.pop(opts, :request_options, [])
-    HTTPoison.delete(delete_url_for(opts, item), @cloudinary_headers, credentials() ++ request_opts)
+
+    HTTPoison.delete(
+      delete_url_for(opts, item),
+      @cloudinary_headers,
+      credentials() ++ request_opts
+    )
   end
 
   defp delete_url_for(opts, item) do
@@ -149,7 +234,12 @@ defmodule Cloudex.CloudinaryApi do
           | {:error, HTTPoison.Error.t()}
   defp delete_by_prefix(prefix, opts) do
     {request_opts, opts} = Map.pop(opts, :request_options, [])
-    HTTPoison.delete(delete_prefix_url_for(opts, prefix), @cloudinary_headers, credentials() ++ request_opts)
+
+    HTTPoison.delete(
+      delete_prefix_url_for(opts, prefix),
+      @cloudinary_headers,
+      credentials() ++ request_opts
+    )
   end
 
   defp delete_prefix_url_for(%{resource_type: resource_type}, prefix) do
@@ -174,7 +264,14 @@ defmodule Cloudex.CloudinaryApi do
 
   defp common_post(body, opts) do
     {request_opts, opts} = Map.pop(opts, :request_options, [])
-    HTTPoison.request(:post, url_for(opts), body, @cloudinary_headers, credentials() ++ request_opts)
+
+    HTTPoison.request(
+      :post,
+      url_for(opts),
+      body,
+      @cloudinary_headers,
+      credentials() ++ request_opts
+    )
   end
 
   defp context_to_list(context) do
@@ -192,6 +289,16 @@ defmodule Cloudex.CloudinaryApi do
     do: %{opts | context: context_to_list(context)} |> prepare_opts()
 
   defp prepare_opts(opts), do: opts
+
+  defp prepare_signed_opts(opts) do
+    opts
+    |> Map.delete(:request_options)
+    |> extract_cloudinary_opts
+    |> prepare_opts
+    |> sign
+    |> unify
+    |> Map.to_list()
+  end
 
   defp url_for(%{resource_type: resource_type}), do: url(resource_type)
   defp url_for(_), do: url("image")

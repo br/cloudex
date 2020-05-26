@@ -40,6 +40,23 @@ defmodule Cloudex do
     end
   end
 
+  def upload_large(list, chunk_size \\ 6_000_000, options \\ %{}) do
+    valid_list =
+      Enum.map(list, fn path -> handle_file_or_directory(path) end)
+      |> Enum.filter(&match?({:ok, _}, &1))
+      |> Enum.map(fn {:ok, file_path} -> file_path end)
+
+    result =
+      valid_list
+      |> Enum.map(&Task.async(Cloudex.CloudinaryApi, :upload_large, [&1, chunk_size, options]))
+      |> Enum.map(&Task.await(&1, get_recv_timeout(options)))
+
+    case Enum.count(result) do
+      1 -> List.first(result)
+      _ -> result
+    end
+  end
+
   @doc """
   Delete a list of images
   """
@@ -71,6 +88,7 @@ defmodule Cloudex do
     case recv_timeout do
       nil ->
         60_000
+
       _ ->
         recv_timeout + 5_000
     end
