@@ -108,7 +108,9 @@ defmodule Cloudex.CloudinaryApi do
          | options
        ]}
 
-    url = "#{@base_url}#{Cloudex.Settings.get(:cloud_name)}/video/upload"
+    url =
+      "#{@base_url}#{Cloudex.Settings.get(:cloud_name)}/#{Map.get(opts, :resource_type, "image")}/upload"
+
     request_options = opts[:request_options] || []
 
     HTTPoison.post(
