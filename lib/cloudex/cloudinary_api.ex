@@ -332,7 +332,7 @@ defmodule Cloudex.CloudinaryApi do
   defp unify(data), do: Enum.reduce(data, %{}, fn {k, v}, acc -> Map.put(acc, "#{k}", v) end)
 
   @spec sign(map) :: map
-  defp sign(data) do
+  def sign(data) do
     timestamp = current_time()
 
     data_without_secret =
